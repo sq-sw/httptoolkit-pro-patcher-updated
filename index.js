@@ -37,7 +37,9 @@ const isMac = process.platform === 'darwin'
 const getAppPath = () => {
   if (argv.path) return argv.path.match(/resources$/ig) ? argv.path : path.join(argv.path, isMac ? '/Resources' : '/resources')
   const paths = [
-    path.join(process.env.LOCALAPPDATA ?? '', 'Programs', 'httptoolkit', 'resources'), //* Windows
+    path.join(process.env.LOCALAPPDATA ?? '', 'Programs', 'httptoolkit', 'resources'), //* Windows (per-user)
+    path.join(process.env.ProgramFiles ?? '', 'HTTP Toolkit', 'resources'), //* Windows (Program Files)
+    path.join(process.env['ProgramFiles(x86)'] ?? '', 'HTTP Toolkit', 'resources'), //* Windows (Program Files x86)
     '/Applications/HTTP Toolkit.app/Contents/Resources', //* macOS
     '/opt/HTTP Toolkit/resources', //* Linux
     '/opt/httptoolkit/resources', //* Arch Linux
@@ -188,7 +190,7 @@ const patchApp = async () => {
   console.log(chalk.greenBright`[+] Patched index.js`)
   console.log(chalk.yellowBright`[+] Installing dependencies...`)
   try {
-    const proc = spawn('npm install express axios got-scraping https-proxy-agent', { cwd: tempPath, stdio: 'inherit', shell: true })
+    const proc = spawn('npm install express axios got-scraping', { cwd: tempPath, stdio: 'inherit', shell: true })
     activeProcesses.push(proc)
     await new Promise(resolve =>
       proc.on('close', resolve)

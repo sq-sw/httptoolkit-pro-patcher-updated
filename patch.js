@@ -1,7 +1,6 @@
 //? Use createRequire to use CommonJS modules in ES module context
 import { createRequire } from 'module'
 const require = createRequire(import.meta.url)
-const { HttpsProxyAgent } = require('https-proxy-agent')
 const axios = require('axios').default
 const electron = require('electron')
 const express = require('express')
@@ -37,15 +36,7 @@ function showPatchError(message) {
 }
 
 const axiosInstance = axios.create({
-  baseURL: 'https://app.httptoolkit.tech',
-  httpsAgent:
-    globalProxy
-      ? new HttpsProxyAgent(
-          globalProxy.startsWith('http')
-            ? globalProxy.replace(/^http:/, 'https:')
-            : 'https://' + globalProxy
-        )
-      : undefined //? Use proxy if set (globalProxy is injected by the patcher)
+  baseURL: 'https://app.httptoolkit.tech'
 })
 
 const hasInternet = () => axiosInstance.head('/', { headers: { 'Accept-Encoding': 'gzip, deflate, br', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) httptoolkit/1.19.1 Chrome/122.0.6261.130 Electron/29.1.5 Safari/537.36' } }).then(() => true).catch(() => false)
@@ -174,37 +165,18 @@ patcherApp.use(async (req, res, next) => {
         console.log("remoteFile", remoteFile.statusCode)
       }
 
-      const accStoreName = data.match(/class\s+([0-9A-Za-z_$]+)\s*\{constructor\s*\(\s*e\s*\)\s*\{this\.goToSettings\s*=\s*e/)?.[1]
-      const modName = data.match(/([0-9A-Za-z_$]+)\.(getLatestUserData|getLastUserData)/)?.[1]
+      // Create the fake user with all methods
+      const patcherUserObj = `{email:"${email}",userId:"patcher-${Date.now()}",oderId:"patcher-${Date.now()}",featureFlags:[],banned:false,subscription:{status:"active",quantity:1,expiry:new Date("9999-12-31"),sku:"pro-annual",plan:"pro-annual",tierCode:"pro",interval:"annual",canManageSubscription:true,updateBillingDetailsUrl:"https://github.com/XielQs/httptoolkit-pro-patcher"},teamSubscription:null,isPaidUser:()=>true,userHasSubscription:()=>true,isPastDueUser:()=>false}`
 
-      if (!accStoreName) showPatchError(`[Patcher] [ERR] Account store name not found in main.js`)
-      else if (!modName) showPatchError(`[Patcher] [ERR] Module name not found in main.js`)
-      else {
-        let patched = data
-          .replace(`class ${accStoreName}{`, `["getLatestUserData","getLastUserData"].forEach(p=>Object.defineProperty(${modName},p,{value:()=>user}));class ${accStoreName}{`)
-        if (patched === data) showPatchError(`[Patcher] [ERR] Patch failed`)
-        else {
-          patched = `const user=${JSON.stringify({
-            email, //? Injected by the patcher
-            oderId: 'patcher-' + Date.now(),
-            featureFlags: [], //? Required - array of feature flags
-            banned: false,
-            subscription: {
-              status: 'active',
-              quantity: 1,
-              expiry: new Date('9999-12-31').toISOString(),
-              sku: 'pro-annual',
-              plan: 'pro-annual',
-              tierCode: 'pro',
-              interval: 'annual',
-              canManageSubscription: true,
-              updateBillingDetailsUrl: 'https://github.com/XielQs/httptoolkit-pro-patcher',
-            },
-            teamSubscription: null //? Required - can be null for individual users
-          })};user.subscription.expiry=new Date(user.subscription.expiry);` + patched
-          data = patched
-          console.log(`[Patcher] main.js patched`)
-        }
+      let patched = data
+        .replace(/this\.user=\(0,[_$]d\.getLastUserData\)\(\)/g, `this.user=${patcherUserObj}`)
+        .replace(/this\.user=yield\(0,[_$]d\.getLatestUserData\)\(\)/g, `this.user=${patcherUserObj}`)
+
+      if (patched === data) {
+        showPatchError(`[Patcher] [ERR] Patch failed - could not find user data patterns`)
+      } else {
+        data = patched
+        console.log(`[Patcher] main.js patched`)
       }
     }
     if (data === '') {

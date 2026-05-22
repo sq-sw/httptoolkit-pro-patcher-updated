@@ -1,24 +1,34 @@
 <h1 align="center">HTTP Toolkit Pro Patcher</h1>
 
-<p align="center">
-  <strong>Updated and working on the latest version as of 28/12/2025</strong>
-</p>
+<h5 align="center">Working for version v1.24.4 (22.05.2026)</h5>
 
-This is a simple tool to patch the HTTP Toolkit Pro app to enable the Pro features without a license or subscription. **But please consider supporting the developer by purchasing a license if you find the HTTP Toolkit useful.**
+This is a simple tool to patch HTTP Toolkit to enable the Pro features without a license or subscription. **But please consider supporting the developer by purchasing a license if you find the HTTP Toolkit useful.**
 
-This is an updated version of the original HTTP Toolkit Pro Patcher. The original patcher by [XielQ](https://github.com/XielQs) became obsolete due to changes in newer versions of HTTP Toolkit (ES Modules, ASAR integrity checks, etc.). This fork has been completely rewritten to work with HTTP Toolkit v1.24.x and newer versions.
+## Usage
 
-**But please consider supporting the developer by purchasing a license if you find HTTP Toolkit useful.**
+1. Clone this repository using `git clone https://github.com/sq-sw/httptoolkit-pro-patcher-updated.git`
+2. cd into the directory using `cd httptoolkit-pro-patcher`
+3. Run `npm install` or whatever package manager you use
+4. Run `node . patch` to patch the HTTP Toolkit
 
-## Important: Pre-requisites
+That's it! The HTTP Toolkit should now have the Pro features enabled.
 
-Before patching, you **MUST** disable the ASAR integrity check in HTTP Toolkit. This is required because Electron validates the integrity of the `app.asar` file, and our patch modifies it.
+***Tip**: You can also run `node . restore` to restore the original HTTP Toolkit.*
 
-### Step 1: Disable ASAR Integrity Check
+**Note**: You may need to run the patcher again after updating the HTTP Toolkit.
 
-Run this command in PowerShell (Windows) or Terminal (macOS/Linux):
+---
 
-**Windows:**
+## ⚠️ Important: Disable ASAR Integrity Check
+
+This patch modifies `app.asar`, which Electron validates by default. You **MUST** disable integrity checks first.
+
+**Windows (PowerShell as Administrator):**
+```powershell
+npx --yes @electron/fuses write --app "C:\Program Files\HTTP Toolkit\HTTP Toolkit.exe" EnableEmbeddedAsarIntegrityValidation=off OnlyLoadAppFromAsar=off
+```
+
+For per-user installation (`%LOCALAPPDATA%\Programs\HTTP Toolkit`):
 ```powershell
 npx --yes @electron/fuses write --app "C:\Users\YOUR_USERNAME\AppData\Local\Programs\HTTP Toolkit\HTTP Toolkit.exe" EnableEmbeddedAsarIntegrityValidation=off OnlyLoadAppFromAsar=off
 ```
@@ -33,96 +43,35 @@ npx --yes @electron/fuses write --app "/Applications/HTTP Toolkit.app" EnableEmb
 npx --yes @electron/fuses write --app "/opt/HTTP Toolkit/httptoolkit" EnableEmbeddedAsarIntegrityValidation=off OnlyLoadAppFromAsar=off
 ```
 
-> **Note:** Replace `YOUR_USERNAME` with your actual Windows username. You can find the exact path by right-clicking on HTTP Toolkit shortcut and selecting "Open file location".
+> ⚠️ Run this **every time you update HTTP Toolkit**, then re-apply the patch.
 
-> **Important:** You need to run this command **every time you reinstall or update HTTP Toolkit**, as the update will restore the original integrity checks.
+---
 
-## Installation & Usage
-
-### Step 2: Clone and Install
-
-```bash
-git clone https://github.com/Jefriline/httptoolkit-pro-patcher.git
-cd httptoolkit-pro-patcher
-npm install
-```
-
-### Step 3: Apply the Patch
-
-```bash
-node . patch
-```
-
-If HTTP Toolkit is not auto-detected, specify the path manually:
-
-**Windows:**
-```powershell
-node . patch --path "C:\Users\YOUR_USERNAME\AppData\Local\Programs\HTTP Toolkit"
-```
-
-**macOS:**
-```bash
-node . patch --path "/Applications/HTTP Toolkit.app"
-```
-
-**Linux:**
-```bash
-node . patch --path "/opt/HTTP Toolkit"
-```
-
-### Step 4: Start HTTP Toolkit
-
-You can start HTTP Toolkit normally from the Start Menu/Applications, or use the patcher to start it with debug logs:
-
-```bash
-node . start --path "PATH_TO_HTTP_TOOLKIT"
-```
-
-That's it! The HTTP Toolkit should now have the Pro features enabled.
-
-## CLI Reference
+## CLI Usage
 
 ```sh
 Usage: node . <command> [options]
 
 Commands:
   patch    Patch HTTP Toolkit
-  restore  Restore HTTP Toolkit to original state
+  restore  Restore HTTP Toolkit
   start    Start HTTP Toolkit with debug logs enabled
 
 Options:
       --version  Show version number                                   [boolean]
   -p, --proxy    Specify a global proxy (only http/https supported)     [string]
-  -P, --path     Specify the path to the HTTP Toolkit folder (auto-detected by
-                 default)                                                [string]
+  -P, --path     Specify the path to the HTTP Toolkit folder (auto-detected by d
+                 efault)                                                [string]
   -h, --help     Show this help message                                [boolean]
-```
 
-## Restoring Original HTTP Toolkit
-
-If you want to remove the patch and restore HTTP Toolkit to its original state:
-
-```bash
-node . restore --path "PATH_TO_HTTP_TOOLKIT"
+You need at least one command before moving on
 ```
 
 ## Using with Proxy
 
-If you want to add a proxy to the patcher, you can use the `--proxy` option:
+If you want to add a proxy to the patcher, you can set the use the `--proxy` option. For example, `node . patch --proxy http://x.x.x.x:8080`.
 
-```bash
-node . patch --proxy http://x.x.x.x:8080
-```
-
-You can also set the `PROXY` environment variable:
-
-```bash
-# Linux/macOS
-PROXY=http://x.x.x.x:8080 node . start
-
-# Windows PowerShell
-$env:PROXY="http://x.x.x.x:8080"; node . start
-```
+You can also set the `PROXY` environment variable to use a proxy. For example, `PROXY=http://x.x.x.x:8080 node . start`.
 
 **Note**: The proxy must be an HTTPS/HTTP proxy. SOCKS proxies are not supported.
 
@@ -132,79 +81,33 @@ $env:PROXY="http://x.x.x.x:8080"; node . start
 
 ## How it works
 
-This tool:
+This tool simply creates a server *(at port 5067)* and acts as like a MITM proxy to intercept and download app files ([app.httptoolkit.tech](https://app.httptoolkit.tech)) and patches the `main.js` file to enable the Pro features. For more detailed information, see the [patch's source code](patch.js) or the [patcher](index.js) file.
 
-1. **Patches the Electron app**: Injects code into HTTP Toolkit's `index.js` file
-2. **Creates a local server**: Runs on port 5067 to intercept requests to `app.httptoolkit.tech`
-3. **Modifies main.js**: Intercepts the `main.js` file and injects Pro user credentials
-4. **Blocks telemetry**: Prevents HTTP Toolkit from sending analytics data
+***Tip**: You can also change the `PORT` environment variable to use a different port. For example, `PORT=8080 httptoolkit` or `PORT=8080 node . start`.*
 
-For more detailed information, see the [patch's source code](patch.js) or the [patcher](index.js) file.
-
-**Tip**: You can change the `PORT` environment variable to use a different port. For example, `PORT=8080 node . start`.
+**Note**: This tool does not modify the HTTP Toolkit files. It only intercepts and modifies the files in memory (and saves the modified files to cache).
 
 ## Requirements
 
 - [Node.js](https://nodejs.org) (v15 or higher) (with npm 7 at least)
-- HTTP Toolkit installed
 
 ## Compatibility
 
-| Platform | Status | Tested Version |
-|----------|--------|----------------|
-| Windows  | Tested and Approved | v1.24.2 |
-| Linux    | Supported | - |
-| macOS    | Supported | - |
+- **Windows**: ✔
+- **Linux**: ✔
+- **macOS**: ✔
 
-## Troubleshooting
+## Known Issues
 
-### "Integrity check failed for asar archive" Error
-
-This means you haven't disabled the ASAR integrity check. Run the `@electron/fuses` command from [Step 1](#step-1-disable-asar-integrity-check).
-
-**If you just updated HTTP Toolkit**, you need to run the fuses command again, then re-apply the patch.
-
-### "HTTP Toolkit not found" Error
-
-Specify the path manually using the `--path` option. Common paths:
-
-- **Windows**: `C:\Users\YOURUSERNAME\AppData\Local\Programs\HTTP Toolkit`
-- **macOS**: `/Applications/HTTP Toolkit.app`
-- **Linux**: `/opt/HTTP Toolkit` or `/usr/lib/httptoolkit`
-
-### "No internet connection and file is not cached" Error
-
-The patcher needs internet access to download HTTP Toolkit's web app files. Make sure:
-1. You have an active internet connection
-2. If using a proxy, ensure it's working correctly
-
-### Permission Errors
-
-- **Windows**: Run PowerShell as Administrator
-- **Linux**: Use `sudo` before the command
-- **macOS**: Enable "App Management" for your terminal emulator in System Preferences > Privacy & Security
-
-### Java Attach APIs Error
-
-If you see this error:
-```
-Exception in thread "main" java.lang.NoClassDefFoundError: com/sun/tools/attach/AgentLoadException
-=> Java attach APIs are not available
-```
-
-**This is NOT a problem.** It's just HTTP Toolkit trying to use Java debugging features which are not available. The patcher still works correctly.
-
-### After Updating HTTP Toolkit
-
-Every time you update HTTP Toolkit:
-1. Run the `@electron/fuses` command to disable integrity checks
-2. Run `node . patch` again to re-apply the patch
+- **Linux**: Try using `sudo` if you get permission errors
+- If you get an error like `No internet connection and file is not cached`, it means the patcher is unable to connect to the internet. Make sure you have an active internet connection and try again. If you are using a proxy, make sure proxy is working well.
+- If HTTP Toolkit does not start after patching, try updating your Node.js version to the latest version.
+- **macOS**: You may need to enable "App Management" for your terminal emulator in Privacy & Security if you get permission errors.
 
 ## Screenshot
 
 ![Screenshot](https://i.imgur.com/eAmDmZF.png)
-
-Background: [Doki Theme](https://github.com/doki-theme/doki-theme-vscode)
+<small>Background: [Doki Theme](https://github.com/doki-theme/doki-theme-vscode)</small>
 
 ## License
 
@@ -217,12 +120,11 @@ This project is for educational purposes only. I do not condone piracy or any il
 ## Credits
 
 - [HTTP Toolkit](https://httptoolkit.com) for the awesome app
-- [Titoot](https://github.com/Titoot) for creating the [httptoolkit-interceptor](https://github.com/Titoot/httptoolkit-interceptor)
-- [XielQ](https://github.com/XielQs) for the original creator of this patcher
-- [Jefriline](https://github.com/Jefriline) for updating and maintaining this patcher for v1.24.2
+- [Titoot](https://github.com/Titoot) for the creating the [httptoolkit-interceptor](https://github.com/Titoot/httptoolkit-interceptor)
+- [XielQ](https://github.com/XielQs) for the creator of the original patcher
 
-## Show Your Support
+## ⭐️ Show Your Support
 
-If you found this project helpful or interesting, please give it a star!
+If you found this project helpful or interesting, please give it a star! 🌟
 
-[![Star History Chart](https://api.star-history.com/svg?repos=Jefriline/httptoolkit-pro-patcher&type=Date)](https://star-history.com/#Jefriline/httptoolkit-pro-patcher&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=IPTVmanreal/httptoolkit-pro-patcher&type=Date)](https://star-history.com/#IPTVmanreal/httptoolkit-pro-patcher&Date)
