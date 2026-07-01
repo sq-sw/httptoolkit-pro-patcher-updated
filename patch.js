@@ -36,10 +36,19 @@ function showPatchError(message) {
 }
 
 const axiosInstance = axios.create({
-  baseURL: 'https://app.httptoolkit.tech'
+  baseURL: 'https://app.httptoolkit.tech',
+  timeout: 10000
 })
 
-const hasInternet = () => axiosInstance.head('/', { headers: { 'Accept-Encoding': 'gzip, deflate, br', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) httptoolkit/1.19.1 Chrome/122.0.6261.130 Electron/29.1.5 Safari/537.36' } }).then(() => true).catch(() => false)
+const hasInternet = () => {
+  const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
+  return Promise.race([
+    axiosInstance.head('/', {
+      headers: { 'Accept-Encoding': 'gzip, deflate, br', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) httptoolkit/1.19.1 Chrome/122.0.6261.130 Electron/29.1.5 Safari/537.36' }
+    }).then(() => true),
+    timeout
+  ]).catch(() => false)
+}
 
 const patcherPort = process.env.PORT || 5067
 const patcherTempPath = patcherPath.join(patcherOs.tmpdir(), 'httptoolkit-patch')
@@ -95,7 +104,7 @@ patcherApp.use(async (req, res, next) => {
   try {
     if (patcherFs.existsSync(filePath)) { //? Check if file exists in temp path
       try {
-        const remoteDate = await axiosInstance.head(req.url, { headers: reqHeaders }).then(res => new Date(res.headers['last-modified']))
+        const remoteDate = await axiosInstance.head(req.url, { headers: reqHeaders, timeout: 5000 }).then(res => new Date(res.headers['last-modified']))
         if (remoteDate < new Date(patcherFs.statSync(filePath).mtime)) {
           console.log(`[Patcher] File not changed, serving from temp path`)
           res.sendFile(filePath)
@@ -114,7 +123,8 @@ patcherApp.use(async (req, res, next) => {
     const remoteFile = await axiosInstance.get(req.url, {
       headers: cleanHeaders,
       responseType: 'arraybuffer',
-      decompress: true //? Auto-decompress gzip/deflate/brotli
+      decompress: true,
+      timeout: 15000
     })
 
     for (const [key, value] of Object.entries(remoteFile.headers)) res.setHeader(key, value)
@@ -165,15 +175,20 @@ patcherApp.use(async (req, res, next) => {
         console.log("remoteFile", remoteFile.statusCode)
       }
 
-      // Create the fake user with all methods
-      const patcherUserObj = `{email:"${email}",userId:"patcher-${Date.now()}",oderId:"patcher-${Date.now()}",featureFlags:[],banned:false,subscription:{status:"active",quantity:1,expiry:new Date("9999-12-31"),sku:"pro-annual",plan:"pro-annual",tierCode:"pro",interval:"annual",canManageSubscription:true,updateBillingDetailsUrl:"https://github.com/XielQs/httptoolkit-pro-patcher"},teamSubscription:null,isPaidUser:()=>true,userHasSubscription:()=>true,isPastDueUser:()=>false}`
+      // Create the fake Pro user. Field set matches HTTP Toolkit v1.26.x account
+      // model: email, userId, featureFlags, banned, subscription{status,...},
+      // teamSubscription + the isPaidUser()/userHasSubscription()/isPastDueUser()
+      // methods. Legacy fields (oderId, orderId, tierCode) were removed upstream
+      // and are intentionally omitted to avoid mismatches.
+      const patcherUserId = `patcher-${Date.now()}`
+      const patcherUserObj = `{email:${JSON.stringify(email)},userId:${JSON.stringify(patcherUserId)},featureFlags:[],banned:false,subscription:{status:"active",quantity:1,expiry:new Date("9999-12-31"),plan:"pro-annual",interval:"annual",canManageSubscription:true,updateBillingDetailsUrl:"https://github.com/XielQs/httptoolkit-pro-patcher"},teamSubscription:null,isPaidUser:()=>true,userHasSubscription:()=>true,isPastDueUser:()=>false}`
 
       let patched = data
-        .replace(/this\.user=\(0,[_$]d\.getLastUserData\)\(\)/g, `this.user=${patcherUserObj}`)
-        .replace(/this\.user=yield\(0,[_$]d\.getLatestUserData\)\(\)/g, `this.user=${patcherUserObj}`)
+        .replace(/this\.user=\(0,\w+\.getLastUserData\)\(\)/g, `this.user=${patcherUserObj}`)
+        .replace(/this\.user=yield\(0,\w+\.getLatestUserData\)\(\)/g, `this.user=${patcherUserObj}`)
 
       if (patched === data) {
-        showPatchError(`[Patcher] [ERR] Patch failed - could not find user data patterns`)
+        showPatchError(`[Patcher] [ERR] Patch failed - could not find user data patterns (this.user=getLastUserData / getLatestUserData). HTTP Toolkit UI may have changed.`)
       } else {
         data = patched
         console.log(`[Patcher] main.js patched`)
@@ -201,7 +216,11 @@ electron.app.on('ready', () => {
     //* Blocking unwanted requests to prevent tracking
     try {
       if (!details || !details.url) return callback({})
-      const blockedHosts = ['events.httptoolkit.tech']
+      //? Block telemetry & account-validation endpoints so the fake Pro user
+      //? is never overwritten by real account data fetched from the server.
+      //? accounts.httptoolkit.tech is the live account API (since ~v1.26) -
+      //? blocking it keeps our injected user object authoritative.
+      const blockedHosts = ['events.httptoolkit.tech', 'errors.httptoolkit.tech', 'accounts.httptoolkit.tech']
       const urlHostname = new URL(details.url).hostname
       if (blockedHosts.includes(urlHostname) || details.url.includes('sentry')) return callback({ cancel: true })
       if (details.requestHeaders) {

@@ -1,6 +1,6 @@
 <h1 align="center">HTTP Toolkit Pro Patcher</h1>
 
-<h5 align="center">Working for version v1.24.4 (22.05.2026)</h5>
+<h5 align="center">Working for version v1.26.1 (02.07.2026)</h5>
 
 This is a simple tool to patch HTTP Toolkit to enable the Pro features without a license or subscription. **But please consider supporting the developer by purchasing a license if you find the HTTP Toolkit useful.**
 
@@ -16,34 +16,6 @@ That's it! The HTTP Toolkit should now have the Pro features enabled.
 ***Tip**: You can also run `node . restore` to restore the original HTTP Toolkit.*
 
 **Note**: You may need to run the patcher again after updating the HTTP Toolkit.
-
----
-
-## ⚠️ Important: Disable ASAR Integrity Check
-
-This patch modifies `app.asar`, which Electron validates by default. You **MUST** disable integrity checks first.
-
-**Windows (PowerShell as Administrator):**
-```powershell
-npx --yes @electron/fuses write --app "C:\Program Files\HTTP Toolkit\HTTP Toolkit.exe" EnableEmbeddedAsarIntegrityValidation=off OnlyLoadAppFromAsar=off
-```
-
-For per-user installation (`%LOCALAPPDATA%\Programs\HTTP Toolkit`):
-```powershell
-npx --yes @electron/fuses write --app "C:\Users\YOUR_USERNAME\AppData\Local\Programs\HTTP Toolkit\HTTP Toolkit.exe" EnableEmbeddedAsarIntegrityValidation=off OnlyLoadAppFromAsar=off
-```
-
-**macOS:**
-```bash
-npx --yes @electron/fuses write --app "/Applications/HTTP Toolkit.app" EnableEmbeddedAsarIntegrityValidation=off OnlyLoadAppFromAsar=off
-```
-
-**Linux:**
-```bash
-npx --yes @electron/fuses write --app "/opt/HTTP Toolkit/httptoolkit" EnableEmbeddedAsarIntegrityValidation=off OnlyLoadAppFromAsar=off
-```
-
-> ⚠️ Run this **every time you update HTTP Toolkit**, then re-apply the patch.
 
 ---
 
@@ -106,8 +78,7 @@ This tool simply creates a server *(at port 5067)* and acts as like a MITM proxy
 
 ## Screenshot
 
-![Screenshot](https://i.imgur.com/eAmDmZF.png)
-<small>Background: [Doki Theme](https://github.com/doki-theme/doki-theme-vscode)</small>
+![Screenshot](https://i.imgur.com/10fA0Oc.png)
 
 ## License
 
@@ -122,9 +93,8 @@ This project is for educational purposes only. I do not condone piracy or any il
 - [HTTP Toolkit](https://httptoolkit.com) for the awesome app
 - [Titoot](https://github.com/Titoot) for the creating the [httptoolkit-interceptor](https://github.com/Titoot/httptoolkit-interceptor)
 - [XielQ](https://github.com/XielQs) for the creator of the original patcher
+- 
 
 ## ⭐️ Show Your Support
 
 If you found this project helpful or interesting, please give it a star! 🌟
-
-[![Star History Chart](https://api.star-history.com/svg?repos=IPTVmanreal/httptoolkit-pro-patcher&type=Date)](https://star-history.com/#IPTVmanreal/httptoolkit-pro-patcher&Date)

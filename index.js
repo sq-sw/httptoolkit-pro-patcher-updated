@@ -7,6 +7,7 @@ import chalk from 'chalk'
 import path from 'path'
 import fs from 'fs'
 import os from 'os'
+import { flipFuses, getCurrentFuseWire, FuseV1Options, FuseVersion } from '@electron/fuses'
 
 const argv = await yargs(process.argv.slice(2))
   .usage(`Usage: ${path.basename(process.argv0, '.exe')} . <command> [options]`)
@@ -52,8 +53,63 @@ const getAppPath = () => {
 }
 
 const appPath = getAppPath()
+const backupPath = path.join(os.tmpdir(), 'httptoolkit-patch-backup', 'app.asar.bak')
+
+//* Resolve the main executable path (for ASAR fuse flipping) on each platform.
+//* appPath points at the "resources" / "Resources" folder; the binary sits one level up.
+const getExePath = () => {
+  const resourcesDir = path.dirname(appPath) //* e.g. "C:\Program Files\HTTP Toolkit"
+  if (isWin) return path.join(resourcesDir, 'HTTP Toolkit.exe')
+  if (isMac) return path.join(resourcesDir, 'MacOS', 'httptoolkit')
+  return path.join(resourcesDir, 'httptoolkit') //* Linux
+}
 
 const isSudo = !isWin && (process.getuid || (() => process.env.SUDO_UID ? 0 : null))() === 0
+
+const permissionErrorText = isMac && isSudo ? 'please check known issues in the README' : `try running ${!isWin ? 'with sudo' : 'as administrator'}`
+
+//* Read whether ASAR integrity validation is already disabled (fuse #0 === DISABLE/48).
+const isAsarIntegrityDisabled = async (exePath) => {
+  try {
+    const wire = await getCurrentFuseWire(exePath)
+    return wire[0] === 48
+  } catch {
+    return true // old Electron without a fuse wire — doesn't validate asar integrity
+  }
+}
+
+//* Reliably disable ASAR integrity validation with retry + verification.
+//* Throws on persistent failure so the caller surfaces a clear error instead of
+//* leaving the app non-booting. Eliminates the need for a manual `fuses write` step.
+const disableAsarIntegrity = async (exePath) => {
+  if (await isAsarIntegrityDisabled(exePath)) {
+    console.log(chalk.greenBright`[+] ASAR integrity validation already disabled`)
+    return
+  }
+  let lastErr = null
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await flipFuses(exePath, {
+        version: FuseVersion.V1,
+        [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: false
+      })
+      lastErr = null
+      break
+    } catch (e) {
+      lastErr = e
+      if (e.code === 'EPERM') break // permissions won't improve with retry
+      await new Promise(r => setTimeout(r, 500 * attempt))
+    }
+  }
+  if (lastErr) {
+    if (lastErr.code === 'EPERM') throw new Error(`Permission denied modifying ${exePath}, ${permissionErrorText}`)
+    throw new Error(`Failed to disable ASAR integrity validation after retries: ${lastErr.message}`)
+  }
+  if (!(await isAsarIntegrityDisabled(exePath))) {
+    throw new Error('ASAR integrity fuse did not switch off after flip. The exe may be re-signed or protected.')
+  }
+  console.log(chalk.greenBright`[+] Disabled ASAR integrity validation`)
+}
 
 if (+(process.versions.node.split('.')[0]) < 15) {
   console.error(chalk.redBright`[!] Node.js version 15 or higher is recommended, you are currently using version {bold ${process.versions.node}}`)
@@ -65,8 +121,6 @@ if (!fs.existsSync(path.join(appPath, 'app.asar'))) {
 }
 
 console.log(chalk.blueBright`[+] HTTP Toolkit found at {bold ${appPath.match(/resources$/ig) ? path.dirname(appPath) : appPath}}`)
-
-const permissionErrorText = isMac && isSudo ? 'please check known issues in the README' : `try running ${!isWin ? 'with sudo' : 'node as administrator'}`
 
 const rm = (/** @type {string} */ dirPath) => {
   if (!fs.existsSync(dirPath)) return
@@ -81,7 +135,9 @@ const rm = (/** @type {string} */ dirPath) => {
 
 const canWrite = (/** @type {string} */ dirPath) => {
   try {
-    fs.accessSync(dirPath, fs.constants.W_OK)
+    const testFile = path.join(dirPath, `.write-test-${Date.now()}`)
+    fs.writeFileSync(testFile, '', 'utf-8')
+    fs.rmSync(testFile, { force: true })
     return true
   } catch {
     return false
@@ -91,6 +147,10 @@ const canWrite = (/** @type {string} */ dirPath) => {
 /** @type {Array<import('child_process').ChildProcess>} */
 const activeProcesses = []
 let isCancelled = false
+const cancelHandler = () => cleanUp(true)
+const sigEvents = ['SIGINT', 'SIGTERM']
+const registerSigHandlers = () => sigEvents.forEach(s => process.on(s, cancelHandler))
+const unregisterSigHandlers = () => sigEvents.forEach(s => process.off(s, cancelHandler))
 
 /** @param {boolean} cancel */
 const cleanUp = async (cancel) => {
@@ -129,13 +189,18 @@ const patchApp = async () => {
 
   if (fs.readFileSync(filePath).includes('Injected by HTTP Toolkit Patcher')) {
     console.log(chalk.yellowBright`[!] HTTP Toolkit already patched`)
+    try {
+      await disableAsarIntegrity(getExePath())
+    } catch (e) {
+      console.error(chalk.redBright`[-] ${e.message}`)
+    }
     return
   }
 
   console.log(chalk.blueBright`[+] Started patching app...`)
 
-  if (!canWrite(filePath)) {
-    console.error(chalk.redBright`[-] Insufficient permissions to write to {bold ${filePath}}, ${permissionErrorText}`)
+  if (!canWrite(path.dirname(filePath))) {
+    console.error(chalk.redBright`[-] Insufficient permissions to write to {bold ${path.dirname(filePath)}}, ${permissionErrorText}`)
     process.exit(1)
   }
 
@@ -147,9 +212,19 @@ const patchApp = async () => {
     console.log(chalk.yellowBright`[+] Adding a custom global proxy: {bold ${globalProxy}}`)
   }
 
+  //? Disable ASAR integrity validation FIRST, before any asar write, with retry
+  //? + verification. This keeps the app bootable even if a later step fails and
+  //? removes the need for any manual `fuses write` command from the user.
+  try {
+    await disableAsarIntegrity(getExePath())
+  } catch (e) {
+    console.error(chalk.redBright`[-] ${e.message}`)
+    process.exit(1)
+  }
+
   console.log(chalk.yellowBright`[+] Extracting app...`)
 
-  ;['SIGINT', 'SIGTERM'].forEach(signal => process.on(signal, () => cleanUp(true)))
+  registerSigHandlers()
 
   try {
     rm(tempPath)
@@ -171,11 +246,11 @@ const patchApp = async () => {
     await cleanUp(true)
   }
   const data = fs.readFileSync(indexPath, 'utf-8')
-  ;['SIGINT', 'SIGTERM'].forEach(signal => process.off(signal, () => cleanUp(true)))
+  unregisterSigHandlers()
   //? Hardcoded random email - no prompt needed
   const email = `user${Math.random().toString(36).substring(2, 11)}@httptoolkit-pro.local`
   console.log(chalk.greenBright`[+] Using email: {bold ${email}}`)
-  ;['SIGINT', 'SIGTERM'].forEach(signal => process.on(signal, () => cleanUp(true)))
+  registerSigHandlers()
   const patch = fs.readFileSync('patch.js', 'utf-8')
   //? No need to clean patch anymore - we use unique variable names (patcherFs, patcherPath, patcherOs, patcherApp)
   const patchedData = data
@@ -202,11 +277,38 @@ const patchApp = async () => {
     await cleanUp(true)
   }
   rm(path.join(tempPath, 'package-lock.json'))
-  fs.copyFileSync(filePath, `${filePath}.bak`)
-  console.log(chalk.greenBright`[+] Backup created at {bold ${filePath}.bak}`)
+  fs.mkdirSync(path.dirname(backupPath), { recursive: true })
+  fs.copyFileSync(filePath, backupPath)
+  console.log(chalk.greenBright`[+] Backup created at {bold ${backupPath}}`)
   console.log(chalk.yellowBright`[+] Building app...`)
-  await asar.createPackage(tempPath, filePath)
+  try {
+    await Promise.race([
+      asar.createPackage(tempPath, filePath),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(Object.assign(new Error('Timed out'), { code: 'ETIMEOUT' })), 60000)
+      )
+    ])
+  } catch (e) {
+    if (e.errno === -13 || e.code === 'EPERM' || e.code === 'EACCES' || e.code === 'ETIMEOUT') {
+      console.error(chalk.redBright`[-] Permission denied writing to {bold ${filePath}}, ${permissionErrorText}`)
+      await cleanUp(true)
+    }
+    console.error(chalk.redBright`[-] An error occurred while building app`, e)
+    await cleanUp(true)
+  }
   rm(tempPath)
+
+  //? ASAR integrity was disabled before any writes. Re-verify here in case an
+  //? AV/EDR tool reverted the exe in the meantime; flip again if needed.
+  try {
+    if (!(await isAsarIntegrityDisabled(getExePath()))) {
+      await disableAsarIntegrity(getExePath())
+    }
+  } catch (e) {
+    console.error(chalk.redBright`[-] ${e.message}`)
+  }
+
+  unregisterSigHandlers()
   console.log(chalk.greenBright`[+] HTTP Toolkit patched successfully`)
   console.log(chalk.greenBright`[+] Restart HTTP Toolkit to apply changes`)
   await cleanUp(false)
@@ -215,17 +317,17 @@ const patchApp = async () => {
 switch (argv._[0]) {
   case 'patch':
     await patchApp()
-    break
+    console.log(chalk.greenBright`[+] Done`)
+    process.exit(0)
   case 'restore':
     try {
       console.log(chalk.blueBright`[+] Restoring HTTP Toolkit...`)
-      if (!fs.existsSync(path.join(appPath, 'app.asar.bak')))
+      if (!fs.existsSync(backupPath))
         console.error(chalk.redBright`[-] HTTP Toolkit not patched or backup file not found`)
       else {
-        fs.copyFileSync(path.join(appPath, 'app.asar.bak'), path.join(appPath, 'app.asar'))
+        fs.copyFileSync(backupPath, path.join(appPath, 'app.asar'))
         console.log(chalk.greenBright`[+] HTTP Toolkit restored`)
       }
-      rm(path.join(os.tmpdir(), 'httptoolkit-patch'))
     } catch (e) {
       if (!isSudo && e.errno === -13) { //? Permission denied
         console.error(chalk.redBright`[-] Permission denied, ${permissionErrorText}`)
@@ -234,7 +336,8 @@ switch (argv._[0]) {
       console.error(chalk.redBright`[-] An error occurred`, e)
       process.exit(1)
     }
-    break
+    console.log(chalk.greenBright`[+] Done`)
+    process.exit(0)
   case 'start':
     console.log(chalk.blueBright`[+] Starting HTTP Toolkit...`)
     if (isSudo) console.warn(chalk.yellowBright`[!] Warning: Running with sudo may cause issues`)
@@ -257,5 +360,3 @@ switch (argv._[0]) {
     console.error(chalk.redBright`[-] Unknown command`)
     process.exit(1)
 }
-
-if (!isCancelled) console.log(chalk.greenBright`[+] Done`)
