@@ -1,3 +1,6 @@
+<p align="center">
+  <img src="https://i.imgur.com/eN9j3GG.png" alt="HTTP Toolkit Pro Patcher">
+</p>
 <h1 align="center">HTTP Toolkit Pro Patcher</h1>
 
 <h5 align="center">Working for version v1.26.1 (02.07.2026)</h5>
@@ -93,7 +96,7 @@ This project is for educational purposes only. I do not condone piracy or any il
 - [HTTP Toolkit](https://httptoolkit.com) for the awesome app
 - [Titoot](https://github.com/Titoot) for the creating the [httptoolkit-interceptor](https://github.com/Titoot/httptoolkit-interceptor)
 - [XielQ](https://github.com/XielQs) for the creator of the original patcher
-- 
+- [IPTVmanreal](https://github.com/IPTVmanreal) for the creator of the patcher
 
 ## ⭐️ Show Your Support
 
