@@ -7,7 +7,7 @@ import chalk from 'chalk'
 import path from 'path'
 import fs from 'fs'
 import os from 'os'
-import { flipFuses, getCurrentFuseWire, FuseV1Options, FuseVersion } from '@electron/fuses'
+import { flipFuses, getCurrentFuseWire, FuseV1Options, FuseVersion, FuseState } from '@electron/fuses'
 
 const argv = await yargs(process.argv.slice(2))
   .usage(`Usage: ${path.basename(process.argv0, '.exe')} . <command> [options]`)
@@ -68,11 +68,13 @@ const isSudo = !isWin && (process.getuid || (() => process.env.SUDO_UID ? 0 : nu
 
 const permissionErrorText = isMac && isSudo ? 'please check known issues in the README' : `try running ${!isWin ? 'with sudo' : 'as administrator'}`
 
-//* Read whether ASAR integrity validation is already disabled (fuse #0 === DISABLE/48).
+//* Read whether ASAR integrity validation is already disabled
+//* (EnableEmbeddedAsarIntegrityValidation, fuse #4, === DISABLE/48 or REMOVED/114).
 const isAsarIntegrityDisabled = async (exePath) => {
   try {
     const wire = await getCurrentFuseWire(exePath)
-    return wire[0] === 48
+    const state = wire[FuseV1Options.EnableEmbeddedAsarIntegrityValidation]
+    return state === undefined || state === FuseState.DISABLE || state === FuseState.REMOVED
   } catch {
     return true // old Electron without a fuse wire — doesn't validate asar integrity
   }

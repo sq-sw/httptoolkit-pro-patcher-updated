@@ -3,7 +3,7 @@
 </p>
 <h1 align="center">HTTP Toolkit Pro Patcher</h1>
 
-<h5 align="center">Working for version v1.26.1 (02.07.2026)</h5>
+<h5 align="center">Working for version v1.27.2 (15.10.2026)</h5>
 
 This is a simple tool to patch HTTP Toolkit to enable the Pro features without a license or subscription. **But please consider supporting the developer by purchasing a license if you find the HTTP Toolkit useful.**
 
